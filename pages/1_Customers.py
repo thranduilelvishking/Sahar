@@ -1,64 +1,57 @@
 import streamlit as st
+from supabase import create_client
 import pandas as pd
-import sqlite3
 
-st.set_page_config(page_title="Customers", layout="wide")
+# ---------------- PAGE SETUP ----------------
+st.set_page_config(page_title="🌸 Customers", layout="wide")
 
-# ---------- DB connection ----------
-def get_connection():
-    return sqlite3.connect("E:/SalonApp/salon.db", check_same_thread=False)
+# ---------------- SUPABASE CONNECTION ----------------
+@st.cache_resource
+def get_supabase():
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
 
-# ---------- Data Helpers ----------
+supabase = get_supabase()
+
+# ---------------- DATABASE FUNCTIONS ----------------
 def get_customers():
-    conn = get_connection()
-    df = pd.read_sql("SELECT CustomerNo, FullName, Phone, Email FROM Customers ORDER BY CustomerNo ASC", conn)
-    conn.close()
-    return df
+    response = supabase.table("Customers").select("id, CustomerNo, FullName, Phone, Email").order("CustomerNo").execute()
+    return pd.DataFrame(response.data) if response.data else pd.DataFrame()
 
 def get_next_customer_no():
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT MAX(CustomerNo) FROM Customers")
-    result = cursor.fetchone()
-    conn.close()
-    max_no = result[0] if result and result[0] else None
-    return 7394 if max_no is None else max_no + 1
+    response = supabase.table("Customers").select("CustomerNo").order("CustomerNo", desc=True).limit(1).execute()
+    if not response.data:
+        return 7394
+    return response.data[0]["CustomerNo"] + 1
 
 def add_customer(full_name, phone, email):
     next_no = get_next_customer_no()
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO Customers (CustomerNo, FullName, Phone, Email)
-        VALUES (?, ?, ?, ?)
-    """, (next_no, full_name, phone, email))
-    conn.commit()
-    conn.close()
+    supabase.table("Customers").insert({
+        "CustomerNo": next_no,
+        "FullName": full_name,
+        "Phone": phone,
+        "Email": email
+    }).execute()
     return next_no
 
 def reset_customer_no(new_start):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id FROM Customers ORDER BY id ASC")
-    rows = cursor.fetchall()
+    response = supabase.table("Customers").select("id").order("id").execute()
     current_no = new_start
-    for row in rows:
-        cursor.execute("UPDATE Customers SET CustomerNo = ? WHERE id = ?", (current_no, row[0]))
+    for item in response.data:
+        supabase.table("Customers").update({"CustomerNo": current_no}).eq("id", item["id"]).execute()
         current_no += 1
-    conn.commit()
-    conn.close()
     return new_start
 
-
-# ---------- UI ----------
+# ---------------- UI ----------------
 st.title("🌸 Salon Customers Dashboard")
 st.markdown("Manage your clients — add, search, and view visit history easily.")
 
-# Admin section (to reset numbering)
+# Admin section
 with st.expander("⚙️ Admin Controls"):
-    st.markdown("Use this to reset the next Customer Number after testing.")
+    st.caption("Reset the next Customer Number after testing.")
     current_next = get_next_customer_no()
-    st.markdown(f"**Current Next Customer #:** {current_next}")
+    st.markdown(f"**Next available Customer #:** {current_next}")
     new_start = st.number_input("Set new starting CustomerNo", min_value=1, value=current_next, step=1)
     if st.button("💾 Update Starting Number"):
         reset_customer_no(new_start)
@@ -67,7 +60,7 @@ with st.expander("⚙️ Admin Controls"):
 
 st.divider()
 
-# Add new customer form
+# Add new customer
 next_no = get_next_customer_no()
 with st.expander("➕ Add New Customer"):
     st.markdown(f"**Next Customer #:** {next_no}")
@@ -76,9 +69,8 @@ with st.expander("➕ Add New Customer"):
         phone = st.text_input("Phone")
         email = st.text_input("Email")
         submitted = st.form_submit_button("Add Customer")
-
         if submitted:
-            if full_name.strip() == "" or phone.strip() == "":
+            if not full_name.strip() or not phone.strip():
                 st.error("Full name and phone number are required.")
             else:
                 new_no = add_customer(full_name, phone, email)
@@ -87,14 +79,13 @@ with st.expander("➕ Add New Customer"):
 
 st.divider()
 
-# Search customers
+# Search
 search_term = st.text_input("🔍 Search customers by name, phone, or email")
 
-# List all customers
+# Display customers
 customers = get_customers()
-
 if customers.empty:
-    st.info("No customers in the database yet.")
+    st.info("No customers found.")
 else:
     if search_term:
         customers = customers[
@@ -115,7 +106,7 @@ else:
                 st.markdown(f"### 🌸 {row['FullName']}")
                 st.write(f"**Customer #:** {row['CustomerNo']}")
                 st.write(f"📞 {row['Phone']}")
-                if row['Email']:
+                if row["Email"]:
                     st.write(f"✉️ {row['Email']}")
             with col2:
                 st.page_link(

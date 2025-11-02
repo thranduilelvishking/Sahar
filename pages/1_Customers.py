@@ -95,4 +95,27 @@ else:
     if search_term:
         customers = customers[
             customers.apply(
-                lambda x: search_term.lower() in str(x["FullName"]_
+                lambda x: search_term.lower() in str(x["FullName"]).lower()
+                or search_term.lower() in str(x["Phone"]).lower()
+                or search_term.lower() in str(x["Email"]).lower(),
+                axis=1,
+            )
+        ]
+
+    st.markdown(f"**Total customers:** {len(customers)}")
+
+    for _, row in customers.iterrows():
+        with st.container(border=True):
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.markdown(f"### 🌸 {row['FullName']}")
+                st.write(f"**Customer #:** {row['CustomerNo']}")
+                st.write(f"📞 {row['Phone']}")
+                if row["Email"]:
+                    st.write(f"✉️ {row['Email']}")
+            with col2:
+                st.write("")  
+                st.write("")
+                if st.button("👁 View Details", key=f"view_{row['CustomerNo']}"):
+                    st.session_state["selected_customer_no"] = row["CustomerNo"]
+                    st.switch_page("pages/2_Customer_Detail.py")

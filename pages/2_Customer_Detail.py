@@ -1,90 +1,74 @@
 import streamlit as st
+from supabase import create_client
 import pandas as pd
-import sqlite3
 from datetime import date
 
-st.set_page_config(page_title="Customer Detail", layout="wide")
+# ---------------- PAGE SETUP ----------------
+st.set_page_config(page_title="🌸 Customer Detail", layout="wide")
 
-# ---------- DB Connection ----------
-def get_connection():
-    return sqlite3.connect("E:/SalonApp/salon.db", check_same_thread=False)
+# ---------------- SUPABASE CONNECTION ----------------
+@st.cache_resource
+def get_supabase():
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
 
-# ---------- Data Helpers ----------
+supabase = get_supabase()
+
+# ---------------- HELPERS ----------------
 def get_customer(customer_no):
-    conn = get_connection()
-    query = "SELECT * FROM Customers WHERE CustomerNo = ?"
-    df = pd.read_sql(query, conn, params=(customer_no,))
-    conn.close()
-    return df.iloc[0] if not df.empty else None
+    res = supabase.table("Customers").select("*").eq("CustomerNo", customer_no).execute()
+    return pd.DataFrame(res.data).iloc[0] if res.data else None
 
 def get_visits(customer_no):
-    conn = get_connection()
-    query = "SELECT * FROM Visits WHERE CustomerNo = ? ORDER BY Date DESC"
-    df = pd.read_sql(query, conn, params=(customer_no,))
-    conn.close()
-    return df
+    res = supabase.table("Visits").select("*").eq("CustomerNo", customer_no).order("Date", desc=True).execute()
+    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
 
 def get_products_used(visit_id):
-    conn = get_connection()
-    query = "SELECT * FROM ProductsUsed WHERE VisitID = ?"
-    df = pd.read_sql(query, conn, params=(visit_id,))
-    conn.close()
-    return df
+    res = supabase.table("ProductsUsed").select("*").eq("VisitID", visit_id).execute()
+    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
 
 def get_products_list():
-    conn = get_connection()
-    df = pd.read_sql("SELECT ProductName, Brand, ColorNo, PricePerGram FROM Products ORDER BY Brand, ProductName", conn)
-    conn.close()
-    return df
+    res = supabase.table("Products").select("ProductName, Brand, ColorNo, PricePerGram").order("Brand").execute()
+    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
 
 def add_visit(customer_no, visit_date, service, total_price):
-    conn = get_connection()
-    cursor = conn.cursor()
     vat = round(total_price * 0.255, 2)
     net = round(total_price - vat - 2, 2)
-    cursor.execute("""
-        INSERT INTO Visits (CustomerNo, Date, Service, TotalPrice_Gross, VAT, NetIncome)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (customer_no, visit_date, service, total_price, vat, net))
-    conn.commit()
-    conn.close()
+    supabase.table("Visits").insert({
+        "CustomerNo": customer_no,
+        "Date": str(visit_date),
+        "Service": service,
+        "TotalPrice_Gross": total_price,
+        "VAT": vat,
+        "NetIncome": net
+    }).execute()
 
 def add_product_used(visit_id, product_name, weight_used):
-    conn = get_connection()
-    pinfo = pd.read_sql(
-        "SELECT Brand, ColorNo, PricePerGram FROM Products WHERE ProductName = ?",
-        conn, params=(product_name,)
-    )
-    if not pinfo.empty:
-        brand = pinfo.iloc[0]["Brand"]
-        color = pinfo.iloc[0]["ColorNo"]
-        price_per_g = pinfo.iloc[0]["PricePerGram"]
-        cost = round(weight_used * price_per_g, 2)
-    else:
-        brand, color, cost = None, None, 0.0
+    products = supabase.table("Products").select("*").eq("ProductName", product_name).execute()
+    if products.data:
+        p = products.data[0]
+        cost = round(weight_used * p["PricePerGram"], 2)
+        supabase.table("ProductsUsed").insert({
+            "VisitID": visit_id,
+            "Product": product_name,
+            "Brand": p["Brand"],
+            "ColorNo": p["ColorNo"],
+            "WeightUsed_g": weight_used,
+            "ProductCost": cost
+        }).execute()
 
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO ProductsUsed (VisitID, Product, Brand, ColorNo, WeightUsed_g, ProductCost)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (visit_id, product_name, brand, color, weight_used, cost))
+        # Update Visit net income
+        used = supabase.table("ProductsUsed").select("ProductCost").eq("VisitID", visit_id).execute()
+        total_used = sum([u["ProductCost"] for u in used.data]) if used.data else 0
+        visits = supabase.table("Visits").select("TotalPrice_Gross, VAT").eq("VisitID", visit_id).execute()
+        if visits.data:
+            v = visits.data[0]
+            net = round(v["TotalPrice_Gross"] - v["VAT"] - total_used - 2, 2)
+            supabase.table("Visits").update({"NetIncome": net}).eq("VisitID", visit_id).execute()
 
-    cursor.execute("""
-        UPDATE Visits
-        SET NetIncome = TotalPrice_Gross - VAT - (
-            SELECT IFNULL(SUM(ProductCost), 0) + 2 FROM ProductsUsed WHERE VisitID = ?
-        )
-        WHERE VisitID = ?
-    """, (visit_id, visit_id))
-
-    conn.commit()
-    conn.close()
-
-
-# ---------- PAGE BODY ----------
-customer_no = st.query_params.get("customer_no")
-
-st.title("🌸 Customer Detail")
+# ---------------- PAGE BODY ----------------
+customer_no = st.session_state.get("selected_customer_no")
 
 if not customer_no:
     st.warning("No customer selected. Please go back to the Customers page.")
@@ -95,13 +79,14 @@ if customer is None:
     st.error(f"No customer found with number {customer_no}.")
     st.stop()
 
-st.header(f"{customer['FullName']} (#{customer['CustomerNo']})")
+st.title(f"🌸 {customer['FullName']} (#{customer['CustomerNo']})")
 st.write(f"📞 {customer['Phone']} | ✉️ {customer['Email']}")
-st.page_link("pages/1_Customers.py", label="🔙 Back to Customers", icon="🏡")
+if st.button("🔙 Back to Customers"):
+    st.switch_page("pages/1_Customers.py")
 
 st.divider()
 
-# ---------- Visits ----------
+# ---------- VISITS ----------
 st.subheader("💈 Visits")
 visits = get_visits(customer_no)
 st.dataframe(visits, use_container_width=True)
@@ -112,18 +97,17 @@ with st.expander("➕ Add New Visit"):
         service = st.text_input("Service")
         total_price = st.number_input("Total Price (€)", min_value=0.0, step=0.5)
         if st.form_submit_button("Add Visit"):
-            add_visit(customer_no, str(visit_date), service, total_price)
+            add_visit(customer_no, visit_date, service, total_price)
             st.success("✅ Visit added successfully!")
             st.rerun()
 
 st.divider()
 
-# ---------- Products Used ----------
+# ---------- PRODUCTS USED ----------
 st.subheader("🧴 Products Used")
-
 if not visits.empty:
     visit_options = {
-        f"{v['Date']} – {v['Service']} (ID {v['VisitID']})": v['VisitID']
+        f"{v['Date']} – {v['Service']} (ID {v['VisitID']})": v["VisitID"]
         for _, v in visits.iterrows()
     }
     selected_visit_label = st.selectbox("Select Visit", list(visit_options.keys()))
@@ -134,10 +118,9 @@ if not visits.empty:
 
     with st.expander("➕ Add Product Used"):
         products_df = get_products_list()
-        search_term = st.text_input("Search by name, brand, or color number")
-
+        search_term = st.text_input("Search products by name, brand, or color number")
         if search_term:
-            filtered_df = products_df[
+            products_df = products_df[
                 products_df.apply(
                     lambda x: search_term.lower() in str(x["ProductName"]).lower()
                     or search_term.lower() in str(x["Brand"]).lower()
@@ -145,25 +128,18 @@ if not visits.empty:
                     axis=1,
                 )
             ]
-        else:
-            filtered_df = products_df
-
-        if filtered_df.empty:
+        if products_df.empty:
             st.warning("No matching products found.")
         else:
-            product_names = filtered_df["ProductName"].tolist()
-            with st.form("add_product_form"):
-                selected_product = st.selectbox("Select Product", product_names)
-                pinfo = filtered_df.loc[filtered_df["ProductName"] == selected_product].iloc[0]
-                st.markdown(
-                    f"**Brand:** {pinfo['Brand']}  \n"
-                    f"**ColorNo:** {pinfo['ColorNo']}  \n"
-                    f"**Price per g:** {pinfo['PricePerGram']} €"
-                )
-                weight_used = st.number_input("Weight Used (g)", min_value=0.0, step=0.5)
-                if st.form_submit_button("Add Product"):
-                    add_product_used(selected_visit_id, selected_product, weight_used)
-                    st.success(f"✅ Added {selected_product} to Visit {selected_visit_id}")
-                    st.rerun()
+            selected_product = st.selectbox("Select Product", products_df["ProductName"])
+            pinfo = products_df.loc[products_df["ProductName"] == selected_product].iloc[0]
+            st.markdown(
+                f"**Brand:** {pinfo['Brand']}  \n**ColorNo:** {pinfo['ColorNo']}  \n**Price/g:** {pinfo['PricePerGram']} €"
+            )
+            weight_used = st.number_input("Weight Used (g)", min_value=0.0, step=0.5)
+            if st.button("Add Product"):
+                add_product_used(selected_visit_id, selected_product, weight_used)
+                st.success(f"✅ Added {selected_product} to Visit {selected_visit_id}")
+                st.rerun()
 else:
     st.info("No visits yet. Add one above to record product usage.")

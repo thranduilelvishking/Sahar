@@ -1,27 +1,35 @@
 import streamlit as st
-import sqlite3
 import pandas as pd
+from supabase import create_client, Client
 
-st.set_page_config(page_title="Salon Manager", page_icon="💇‍♀️", layout="wide")
+# --- Streamlit Page Setup ---
+st.set_page_config(page_title="Salon Manager", page_icon="🌸", layout="wide")
 
-st.title("💇‍♀️ Salon Manager Dashboard")
+st.title("🌸 Salon Manager Dashboard")
 
 st.markdown("""
-Welcome to **Salon Manager**!
+Welcome to **Salon Manager** — your all-in-one beauty business tool! 💇‍♀️  
 
-Use the sidebar to:
-- Manage customers 👩‍🦰  
-- Track visits and products used 💅  
-- Update service & retail product catalogs 🧴  
+Use the sidebar or tabs to:
+- Manage **customers** 🌸  
+- Track **visits** and **products used** 💅  
+- Update your **services** and **inventory** 🧴  
 """)
 
-# Simple DB check
+# --- Connect to Supabase ---
 try:
-    conn = sqlite3.connect("salon.db")
-    tables = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table';", conn)
-    st.success("✅ Connected to salon.db successfully!")
-    st.dataframe(tables)
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    supabase: Client = create_client(url, key)
+
+    # Test connection
+    res = supabase.table("Customers").select("count(*)").execute()
+    st.success("✅ Connected to Supabase database successfully!")
+
+    # Show available tables
+    st.subheader("📋 Available Tables in Database")
+    tables = ["Customers", "Visits", "ProductsUsed", "Products", "Services", "SaleProducts"]
+    st.dataframe(pd.DataFrame({"Table Name": tables}))
+
 except Exception as e:
-    st.error(f"Database connection failed: {e}")
-finally:
-    conn.close()
+    st.error(f"❌ Failed to connect to Supabase: {e}")

@@ -4,6 +4,17 @@ from supabase import create_client, Client
 
 # --- Streamlit Page Setup ---
 st.set_page_config(page_title="Salon Manager", page_icon="🌸", layout="wide")
+# ---- Simple password protection ----
+PASSWORD = st.secrets.get("app_password", None)
+
+if PASSWORD:
+    pw = st.text_input("🔐 Enter password to access Salon Manager", type="password")
+    if pw != PASSWORD:
+        st.warning("Please enter the correct password.")
+        st.stop()
+else:
+    st.error("Admin password not found in secrets. Add 'app_password' to Streamlit secrets.")
+    st.stop()
 
 st.title("🌸 Salon Manager Dashboard")
 
@@ -47,3 +58,4 @@ try:
 
 except Exception as e:
     st.error(f"❌ Failed to connect to Supabase: {e}")
+

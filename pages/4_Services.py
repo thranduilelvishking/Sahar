@@ -1,54 +1,48 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
+from supabase import create_client
 
-st.set_page_config(page_title="Services Manager", layout="wide")
+# ---------- CONFIG ----------
+st.set_page_config(page_title="Services Manager", page_icon="🌸", layout="wide")
 
-# ---------- DB connection ----------
-def get_connection():
-    return sqlite3.connect("E:/SalonApp/salon.db", check_same_thread=False)
+# ---------- SUPABASE CONNECTION ----------
+url = st.secrets["SUPABASE_URL"]
+key = st.secrets["SUPABASE_KEY"]
+supabase = create_client(url, key)
 
 # ---------- Load Services ----------
 def load_services(search_query=""):
-    conn = get_connection()
-    query = "SELECT * FROM Services"
-    if search_query:
-        query += " WHERE ServiceName LIKE ? OR Category LIKE ?"
-        df = pd.read_sql(query, conn, params=(f"%{search_query}%", f"%{search_query}%"))
-    else:
-        df = pd.read_sql(query, conn)
-    conn.close()
+    res = supabase.table("Services").select("*").execute()
+    df = pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    if not df.empty and search_query:
+        df = df[
+            df.apply(
+                lambda x: search_query.lower() in str(x["ServiceName"]).lower()
+                or search_query.lower() in str(x["Category"]).lower(),
+                axis=1,
+            )
+        ]
     return df
 
 # ---------- Save updates ----------
 def update_service(row):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE Services
-        SET Category=?, ServiceName=?, Duration=?, Price_EUR=?, Active=?
-        WHERE ServiceID=?
-    """, (
-        row["Category"],
-        row["ServiceName"],
-        row["Duration"],
-        row["Price_EUR"],
-        int(row["Active"]),
-        row["ServiceID"]
-    ))
-    conn.commit()
-    conn.close()
+    supabase.table("Services").update({
+        "Category": row["Category"],
+        "ServiceName": row["ServiceName"],
+        "Duration": row["Duration"],
+        "Price_EUR": row["Price_EUR"],
+        "Active": bool(row["Active"])
+    }).eq("ServiceID", row["ServiceID"]).execute()
 
 # ---------- Add new service ----------
 def add_service(category, name, duration, price, active):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO Services (Category, ServiceName, Duration, Price_EUR, Active)
-        VALUES (?, ?, ?, ?, ?)
-    """, (category, name, duration, price, int(active)))
-    conn.commit()
-    conn.close()
+    supabase.table("Services").insert({
+        "Category": category,
+        "ServiceName": name,
+        "Duration": duration,
+        "Price_EUR": price,
+        "Active": bool(active)
+    }).execute()
 
 # ---------- UI ----------
 st.title("💇‍♀️ Services Manager")
@@ -58,16 +52,16 @@ Manage your service catalog — update prices, durations, or toggle active/inact
 Use the search bar to find services quickly.
 """)
 
-# Search bar
+# --- Search Bar ---
 search = st.text_input("🔍 Search by service name or category")
 
-# Load filtered services
+# --- Load Services ---
 services = load_services(search)
 
 if services.empty:
     st.warning("No services found matching your search.")
 else:
-    st.write(f"Found {len(services)} services.")
+    st.write(f"**Found {len(services)} services.**")
 
     # Editable table
     edited_df = st.data_editor(
@@ -80,7 +74,7 @@ else:
 
     # Save button
     if st.button("💾 Save Changes"):
-        with st.spinner("Saving updates..."):
+        with st.spinner("Saving updates to Supabase..."):
             for _, row in edited_df.iterrows():
                 update_service(row)
         st.success("✅ All service updates saved successfully!")

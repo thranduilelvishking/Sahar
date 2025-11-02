@@ -1,106 +1,83 @@
 import streamlit as st
 import pandas as pd
-from supabase import create_client
+from supabase import create_client, Client
 
-# ---------- CONFIG ----------
-st.set_page_config(page_title="Services Manager", page_icon="🌸", layout="wide")
+st.set_page_config(page_title="💇‍♀️ Services Manager", layout="wide")
 
-# ---------- SUPABASE CONNECTION ----------
-url = st.secrets["SUPABASE_URL"]
-key = st.secrets["SUPABASE_KEY"]
-supabase = create_client(url, key)
+# --- DB Connection ---
+@st.cache_resource
+def get_client() -> Client:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
 
-# ---------- Load Services ----------
+supabase = get_client()
+
+# --- Load Services ---
 def load_services(search_query=""):
-    res = supabase.table("Services").select("*").execute()
-    df = pd.DataFrame(res.data) if res.data else pd.DataFrame()
-    if not df.empty and search_query:
-        df = df[
-            df.apply(
-                lambda x: search_query.lower() in str(x["ServiceName"]).lower()
-                or search_query.lower() in str(x["Category"]).lower(),
-                axis=1,
-            )
-        ]
-    return df
+    query = supabase.table("Services").select("*")
+    if search_query:
+        query = query.ilike("ServiceName", f"%{search_query}%") \
+                     .or_().ilike("Category", f"%{search_query}%")
+    res = query.execute()
+    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
 
-# ---------- Save updates ----------
+# --- Update Service ---
 def update_service(row):
     supabase.table("Services").update({
         "Category": row["Category"],
         "ServiceName": row["ServiceName"],
         "Duration": row["Duration"],
         "Price_EUR": row["Price_EUR"],
-        "Active": bool(row["Active"])
-    }).eq("ServiceID", row["ServiceID"]).execute()
+        "Active": row["Active"]
+    }).eq("id", row["id"]).execute()
 
-# ---------- Add new service ----------
+# --- Add New Service ---
 def add_service(category, name, duration, price, active):
     supabase.table("Services").insert({
         "Category": category,
         "ServiceName": name,
         "Duration": duration,
         "Price_EUR": price,
-        "Active": bool(active)
+        "Active": active
     }).execute()
 
-# ---------- UI ----------
+# --- UI ---
 st.title("💇‍♀️ Services Manager")
 
-st.markdown("""
-Manage your service catalog — update prices, durations, or toggle active/inactive services.  
-Use the search bar to find services quickly.
-""")
-
-# --- Search Bar ---
 search = st.text_input("🔍 Search by service name or category")
-
-# --- Load Services ---
 services = load_services(search)
 
 if services.empty:
-    st.warning("No services found matching your search.")
+    st.warning("No services found.")
 else:
-    st.write(f"**Found {len(services)} services.**")
+    st.write(f"Found {len(services)} services.")
+    edited_df = st.data_editor(services, use_container_width=True, hide_index=True, key="editable_services")
 
-    # Editable table
-    edited_df = st.data_editor(
-        services,
-        use_container_width=True,
-        num_rows="dynamic",
-        hide_index=True,
-        key="editable_services",
-    )
-
-    # Save button
     if st.button("💾 Save Changes"):
-        with st.spinner("Saving updates to Supabase..."):
-            for _, row in edited_df.iterrows():
-                update_service(row)
-        st.success("✅ All service updates saved successfully!")
+        pw = st.text_input("🔐 Enter admin password to confirm changes", type="password")
+        if pw == st.secrets.get("app_password"):
+            with st.spinner("Saving updates..."):
+                for _, row in edited_df.iterrows():
+                    update_service(row)
+            st.success("✅ Changes saved successfully!")
+        else:
+            st.error("❌ Incorrect password — no changes saved.")
 
-# ---------- Add new service form ----------
 st.divider()
 st.subheader("➕ Add New Service")
 
 with st.form("add_service_form"):
     col1, col2, col3 = st.columns(3)
-    with col1:
-        category = st.text_input("Category")
-    with col2:
-        name = st.text_input("Service Name")
-    with col3:
-        duration = st.number_input("Duration (min)", min_value=0.0, step=5.0)
-    
+    category = col1.text_input("Category")
+    name = col2.text_input("Service Name")
+    duration = col3.number_input("Duration (min)", min_value=0.0, step=5.0)
+
     col4, col5 = st.columns(2)
-    with col4:
-        price = st.number_input("Price (€)", min_value=0.0, step=1.0)
-    with col5:
-        active = st.checkbox("Active", value=True)
+    price = col4.number_input("Price (€)", min_value=0.0, step=1.0)
+    active = col5.checkbox("Active", value=True)
 
-    submitted = st.form_submit_button("Add Service")
-
-    if submitted:
+    if st.form_submit_button("Add Service"):
         if not name.strip():
             st.error("Service Name cannot be empty.")
         else:

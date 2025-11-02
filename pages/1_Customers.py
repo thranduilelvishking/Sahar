@@ -2,10 +2,9 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
 
-# ---------------- CONFIG ----------------
 st.set_page_config(page_title="Customers", layout="wide")
 
-# ---------------- SUPABASE CONNECTION ----------------
+# ---------- SUPABASE CONNECTION ----------
 @st.cache_resource
 def init_connection() -> Client:
     url = st.secrets["supabase"]["url"]
@@ -14,7 +13,7 @@ def init_connection() -> Client:
 
 supabase = init_connection()
 
-# ---------------- DATABASE FUNCTIONS ----------------
+# ---------- DATA HELPERS ----------
 def get_customers():
     res = supabase.table("Customers").select("CustomerNo, FullName, Phone, Email").order("CustomerNo").execute()
     return pd.DataFrame(res.data) if res.data else pd.DataFrame()
@@ -35,11 +34,10 @@ def add_customer(full_name, phone, email):
     }).execute()
     return next_no
 
-# ---------------- PAGE BODY ----------------
+# ---------- PAGE ----------
 st.title("🌸 Salon Customers Dashboard")
-st.markdown("Manage your clients — add, search, and view visit history easily.")
+st.markdown("Manage clients — add, search, and view visit history.")
 
-# --- Add New Customer ---
 next_no = get_next_customer_no()
 with st.expander("➕ Add New Customer"):
     st.markdown(f"**Next Customer #:** {next_no}")
@@ -47,28 +45,22 @@ with st.expander("➕ Add New Customer"):
         full_name = st.text_input("Full Name")
         phone = st.text_input("Phone")
         email = st.text_input("Email")
-        submitted = st.form_submit_button("Add Customer")
-
-        if submitted:
-            if full_name.strip() == "" or phone.strip() == "":
-                st.error("Full name and phone number are required.")
-            else:
+        if st.form_submit_button("Add Customer"):
+            if full_name.strip() and phone.strip():
                 new_no = add_customer(full_name, phone, email)
-                st.success(f"✅ Customer #{new_no} added successfully!")
+                st.success(f"✅ Customer #{new_no} added!")
                 st.rerun()
+            else:
+                st.error("Full name and phone are required.")
 
 st.divider()
 
-# --- Search Bar ---
-search_term = st.text_input("🔍 Search customers by name, phone, or email")
-
-# --- Customer List ---
+search_term = st.text_input("🔍 Search customers")
 customers = get_customers()
 
 if customers.empty:
-    st.info("No customers in the database yet.")
+    st.info("No customers yet.")
 else:
-    # Filter dynamically
     if search_term:
         customers = customers[
             customers.apply(
@@ -79,9 +71,6 @@ else:
             )
         ]
 
-    st.markdown(f"**Total customers:** {len(customers)}")
-
-    # --- Display customers in cards ---
     for _, row in customers.iterrows():
         with st.container(border=True):
             col1, col2 = st.columns([3, 1])
@@ -92,8 +81,6 @@ else:
                 if row['Email']:
                     st.write(f"✉️ {row['Email']}")
             with col2:
-                st.write("")  # spacing
-                if st.button(f"👁 View", key=f"view_{row['CustomerNo']}"):
+                if st.button("👁 View", key=f"view_{row['CustomerNo']}"):
                     st.session_state["selected_customer_no"] = row["CustomerNo"]
-                    st.query_params.update({"customer_no": row["CustomerNo"]})
                     st.switch_page("pages/2_Customer_Detail.py")

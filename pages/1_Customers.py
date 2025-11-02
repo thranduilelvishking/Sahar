@@ -16,16 +16,19 @@ supabase = get_supabase()
 
 # ---------------- DATABASE FUNCTIONS ----------------
 def get_customers():
+    """Return all customers sorted by CustomerNo."""
     response = supabase.table("Customers").select("id, CustomerNo, FullName, Phone, Email").order("CustomerNo").execute()
     return pd.DataFrame(response.data) if response.data else pd.DataFrame()
 
 def get_next_customer_no():
+    """Return next available CustomerNo, starting from 7394 if empty."""
     response = supabase.table("Customers").select("CustomerNo").order("CustomerNo", desc=True).limit(1).execute()
     if not response.data:
         return 7394
     return response.data[0]["CustomerNo"] + 1
 
 def add_customer(full_name, phone, email):
+    """Add a new customer record."""
     next_no = get_next_customer_no()
     supabase.table("Customers").insert({
         "CustomerNo": next_no,
@@ -36,6 +39,7 @@ def add_customer(full_name, phone, email):
     return next_no
 
 def reset_customer_no(new_start):
+    """Reset all customer numbers sequentially from new_start."""
     response = supabase.table("Customers").select("id").order("id").execute()
     current_no = new_start
     for item in response.data:
@@ -75,7 +79,8 @@ with st.expander("➕ Add New Customer"):
             else:
                 new_no = add_customer(full_name, phone, email)
                 st.success(f"✅ Customer #{new_no} added successfully!")
-                st.rerun()
+                st.session_state["selected_customer_no"] = new_no
+                st.switch_page("pages/2_Customer_Detail.py")
 
 st.divider()
 
@@ -90,32 +95,4 @@ else:
     if search_term:
         customers = customers[
             customers.apply(
-                lambda x: search_term.lower() in str(x["FullName"]).lower()
-                or search_term.lower() in str(x["Phone"]).lower()
-                or search_term.lower() in str(x["Email"]).lower(),
-                axis=1,
-            )
-        ]
-
-    st.markdown(f"**Total customers:** {len(customers)}")
-
-    for _, row in customers.iterrows():
-        with st.container(border=True):
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.markdown(f"### 🌸 {row['FullName']}")
-                st.write(f"**Customer #:** {row['CustomerNo']}")
-                st.write(f"📞 {row['Phone']}")
-                if row["Email"]:
-                    st.write(f"✉️ {row['Email']}")
-            with col2:
-                # Create a clickable link manually
-                customer_url = f"/2_Customer_Detail?customer_no={row['CustomerNo']}"
-                st.markdown(
-                    f"[👁 View Details]({customer_url})",
-                    unsafe_allow_html=True
-                )
-
-
-
-
+                lambda x: search_term.lower() in str(x["FullName"]_

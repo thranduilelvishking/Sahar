@@ -109,11 +109,13 @@ else:
                 if row["Email"]:
                     st.write(f"✉️ {row['Email']}")
             with col2:
-                st.page_link(
-                    "2_Customer_Detail",
-                    label="👁 View Details",
-                    icon="🔗",
-                    params={"customer_no": row["CustomerNo"]}
-                    )
+                # Create a clickable link manually
+                customer_url = f"/2_Customer_Detail?customer_no={row['CustomerNo']}"
+                st.markdown(
+                    f"[👁 View Details]({customer_url})",
+                    unsafe_allow_html=True
+                )
+
+
 
 

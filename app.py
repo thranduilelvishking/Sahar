@@ -8,12 +8,12 @@ st.set_page_config(page_title="Salon Manager", page_icon="🌸", layout="wide")
 st.title("🌸 Salon Manager Dashboard")
 
 st.markdown("""
-Welcome to **Salon Manager** — your all-in-one beauty business tool! 💇‍♀️  
+Welcome to **Salon Manager (Cloud)** 💇‍♀️
 
-Use the sidebar or tabs to:
-- Manage **customers** 🌸  
-- Track **visits** and **products used** 💅  
-- Update your **services** and **inventory** 🧴  
+Use the sidebar / pages to:
+- Manage customers 🌸  
+- Track visits and products used 💅  
+- Update services and inventory 🧴  
 """)
 
 # --- Connect to Supabase ---
@@ -22,14 +22,28 @@ try:
     key = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(url, key)
 
-    # Test connection
-    res = supabase.table("Customers").select("count(*)").execute()
-    st.success("✅ Connected to Supabase database successfully!")
+    # Instead of count(*), just try a light select
+    test_res = supabase.table("Customers").select("*").limit(1).execute()
 
-    # Show available tables
-    st.subheader("📋 Available Tables in Database")
-    tables = ["Customers", "Visits", "ProductsUsed", "Products", "Services", "SaleProducts"]
+    st.success("✅ Connected to Supabase successfully!")
+
+    # Show cloud tables we expect to use
+    st.subheader("📋 Available Tables")
+    tables = [
+        "Customers",
+        "Visits",
+        "ProductsUsed",
+        "Products",
+        "Services",
+        "SaleProducts",
+    ]
     st.dataframe(pd.DataFrame({"Table Name": tables}))
+
+    # Extra debug info (optional: shows if Customers table has any rows yet)
+    if test_res.data:
+        st.info(f"Customers table OK. Example customer: {test_res.data[0].get('FullName', '(no name)')}")
+    else:
+        st.info("Customers table OK but currently has 0 rows.")
 
 except Exception as e:
     st.error(f"❌ Failed to connect to Supabase: {e}")

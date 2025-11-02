@@ -1,37 +1,29 @@
 import streamlit as st
 import pandas as pd
-from supabase import create_client
+from supabase import create_client, Client
 
-# ---------- CONFIG ----------
-st.set_page_config(page_title="Products Inventory", page_icon="🌸", layout="wide")
+st.set_page_config(page_title="🧴 Product Inventory", layout="wide")
 
-# ---------- SUPABASE CONNECTION ----------
-url = st.secrets["SUPABASE_URL"]
-key = st.secrets["SUPABASE_KEY"]
-supabase = create_client(url, key)
+# --- DB Connection ---
+@st.cache_resource
+def get_client() -> Client:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
 
-# ---------- Load Products ----------
+supabase = get_client()
+
+# --- Load Products ---
 def load_products(search_query=""):
     query = supabase.table("Products").select("*")
     if search_query:
-        # Manual filtering since Supabase text filters are exact match only
-        res = query.execute()
-        df = pd.DataFrame(res.data)
-        if not df.empty:
-            df = df[
-                df.apply(
-                    lambda x: search_query.lower() in str(x["ProductName"]).lower()
-                    or search_query.lower() in str(x["Brand"]).lower()
-                    or search_query.lower() in str(x["ColorNo"]).lower(),
-                    axis=1,
-                )
-            ]
-        return df
-    else:
-        res = query.order("Brand", desc=False).execute()
-        return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+        query = query.ilike("ProductName", f"%{search_query}%") \
+                     .or_().ilike("Brand", f"%{search_query}%") \
+                     .or_().ilike("ColorNo", f"%{search_query}%")
+    res = query.execute()
+    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
 
-# ---------- Save updates ----------
+# --- Update Product ---
 def update_product(row):
     supabase.table("Products").update({
         "Brand": row["Brand"],
@@ -40,33 +32,21 @@ def update_product(row):
         "PackagePrice": row["PackagePrice"],
         "PricePerGram": row["PricePerGram"],
         "Quantity": row["Quantity"]
-    }).eq("ProductName", row["ProductName"]).execute()
+    }).eq("id", row["id"]).execute()
 
-# ---------- UI ----------
+# --- UI ---
 st.title("🧴 Product Inventory Manager")
 
-
-# --- Search Bar ---
 search = st.text_input("🔍 Search by product name, brand, or color number")
-
-# --- Load and Display ---
 products = load_products(search)
 
 if products.empty:
-    st.warning("No products found matching your search.")
+    st.warning("No products found.")
 else:
-    st.write(f"**Found {len(products)} products.**")
+    st.write(f"Found {len(products)} products.")
+    edited_df = st.data_editor(products, use_container_width=True, hide_index=True, key="editable_products")
 
-    # Editable table
-    edited_df = st.data_editor(
-        products,
-        use_container_width=True,
-        num_rows="dynamic",
-        hide_index=True,
-        key="editable_products",
-    )
-
- if st.button("💾 Save Changes"):
+    if st.button("💾 Save Changes"):
         pw = st.text_input("🔐 Enter admin password to confirm changes", type="password")
         if pw == st.secrets.get("app_password"):
             with st.spinner("Saving updates..."):
@@ -75,4 +55,3 @@ else:
             st.success("✅ Changes saved successfully!")
         else:
             st.error("❌ Incorrect password — no changes saved.")
-

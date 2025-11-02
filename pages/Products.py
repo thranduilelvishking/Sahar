@@ -45,7 +45,6 @@ def update_product(row):
 # ---------- UI ----------
 st.title("🧴 Product Inventory Manager")
 
-st.markdown("Easily manage your **product stock, pricing, and details** all in one place.")
 
 # --- Search Bar ---
 search = st.text_input("🔍 Search by product name, brand, or color number")
@@ -67,9 +66,13 @@ else:
         key="editable_products",
     )
 
-    # Save changes
-    if st.button("💾 Save Changes to Supabase"):
-        with st.spinner("Saving updates..."):
-            for _, row in edited_df.iterrows():
-                update_product(row)
-        st.success("✅ All changes saved successfully!")
+ if st.button("💾 Save Changes"):
+        pw = st.text_input("🔐 Enter admin password to confirm changes", type="password")
+        if pw == st.secrets.get("app_password"):
+            with st.spinner("Saving updates..."):
+                for _, row in edited_df.iterrows():
+                    update_product(row)
+            st.success("✅ Changes saved successfully!")
+        else:
+            st.error("❌ Incorrect password — no changes saved.")
+

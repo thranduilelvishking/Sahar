@@ -110,8 +110,10 @@ else:
                     st.write(f"✉️ {row['Email']}")
             with col2:
                 st.page_link(
-                    "pages/2_Customer_Detail.py",
+                    "2_Customer_Detail",
                     label="👁 View Details",
                     icon="🔗",
                     params={"customer_no": row["CustomerNo"]}
-                )
+                    )
+
+

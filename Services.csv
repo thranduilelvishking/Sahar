@@ -1,0 +1,86 @@
+Category,ServiceName,Duration,Price_EUR,Active
+Leikkaukset,Kampaamoleikkaus lyhyet,00:40:00,45,True
+Leikkaukset,Kampaamoleikkaus puolipitkät,01:00:00,50,True
+Leikkaukset,Kampaamoleikkaus pitkät,01:00:00,65,True
+Leikkaukset,Kampaamoleikkaus extrapitkät,01:20:00,78,True
+Leikkaukset,Mallinmuutosleikkaus lyhyet,00:40:00,50,True
+Leikkaukset,Mallinmuutosleikkaus puolipitkät,00:50:00,60,True
+Leikkaukset,Mallinmuutosleikkaus pitkät,01:00:00,70,True
+Leikkaukset,Mallinmuutosleikkaus extrapitkät,01:00:00,80,True
+Leikkaukset,Otsatukan leikkaus,00:20:00,10,True
+Leikkaukset,Kihara- ja afrohiusten leikkaus lyhyet,00:30:00,50,True
+Leikkaukset,Kihara- ja afrohiusten leikkaus puolipitkät,01:00:00,60,True
+Leikkaukset,Kihara- ja afrohiusten leikkaus pitkät,00:40:00,70,True
+Leikkaukset,Kihara- ja afrohiusten leikkaus extrapitkät,01:00:00,80,True
+Leikkaukset,Hiusten tasaus,00:30:00,30,True
+Leikkaukset,Koneajo,00:15:00,20,True
+Leikkaukset,Parturileikkaus,00:30:00,25,True
+Monivärit/raidat,Moniväri ja leikkaus (lyhyet),02:00:00,115,True
+Monivärit/raidat,Moniväri ja leikkaus (keskipitkät),02:15:00,129,True
+Monivärit/raidat,Moniväri ja leikkaus (pitkät),02:30:00,149,True
+Monivärit/raidat,Moniväri ja leikkaus (extrapitkät),02:45:00,168,True
+Monivärit/raidat,Raidat ja leikkaus (lyhyet),02:00:00,115,True
+Monivärit/raidat,Raidat ja leikkaus (keskipitkät),02:15:00,138,True
+Monivärit/raidat,Raidat ja leikkaus (pitkät),02:30:00,153,True
+Monivärit/raidat,Raidat ja leikkaus (extrapitkät),02:45:00,172,True
+Monivärit/raidat,Moniväri (lyhyet),01:30:00,98,True
+Monivärit/raidat,Moniväri (keskipitkät),01:45:00,100,True
+Monivärit/raidat,Moniväri (pitkät),02:00:00,105,True
+Monivärit/raidat,Moniväri (extrapitkät),02:15:00,110,True
+Monivärit/raidat,Raidat (lyhyet),01:30:00,95,True
+Monivärit/raidat,Raidat (keskipitkät),01:45:00,119,True
+Monivärit/raidat,Raidat (pitkät),02:00:00,129,True
+Monivärit/raidat,Raidat (extrapitkät),02:15:00,151,True
+Monivärit/raidat,Balayage ja leikkaus lyhyet hiukset,01:00:00,160,True
+Monivärit/raidat,Balayage ja leikkaus keskipitkät hiukset,01:20:00,180,True
+Monivärit/raidat,Balayage ja leikkaus extra pitkät hiukset,01:30:00,250,True
+Kampaukset ja meikit,Pikakampaus,00:30:00,35,True
+Kampaukset ja meikit,Juhlakampaus,01:00:00,70,True
+Kampaukset ja meikit,Päivämeikki,00:45:00,30,True
+Kampaukset ja meikit,Juhlameikki,01:00:00,75,True
+Kampaukset ja meikit,Hiustenpesu ja föönaus (lyhyet hiukset),00:40:00,40,True
+Kampaukset ja meikit,Hiustenpesu ja föönaus (keskipitkät hiukset),00:50:00,42,True
+Kampaukset ja meikit,Hiustenpesu ja föönaus (pitkät hiukset),01:00:00,45,True
+Kampaukset ja meikit,Hiustenpesu ja föönaus (extrapitkät hiukset),00:50:00,48,True
+Kampaukset ja meikit,Nutturakampaus (lyhyet hiukset),00:40:00,60,True
+Kampaukset ja meikit,Nutturakampaus (keskipitkät hiukset),00:40:00,62,True
+Kampaukset ja meikit,Nutturakampaus (pitkät hiukset),01:00:00,65,True
+Kampaukset ja meikit,Nutturakampaus (extrapitkät hiukset),01:00:00,70,True
+Kampaukset ja meikit,Kiharakampaus,00:40:00,55,True
+Kampaukset ja meikit,Päivämeikki,00:50:00,45,True
+Kampaukset ja meikit,Juhlameikki,01:00:00,65,True
+Kampaukset ja meikit,Häämeikki,01:30:00,120,True
+Kampaukset ja meikit,Meikki ja kampaus (paketti),01:40:00,120,True
+Värjäykset,Väri ja leikkaus (lyhyet),01:30:00,100,True
+Värjäykset,Väri ja leikkaus (keskipitkät),01:45:00,119,True
+Värjäykset,Väri ja leikkaus (pitkät),02:00:00,129,True
+Värjäykset,Väri ja leikkaus (extrapitkät),02:15:00,149,True
+Värjäykset,Tyviväri ja leikkaus,01:30:00,102,True
+Värjäykset,Tyviväri,01:00:00,75,True
+Värjäykset,Väri (lyhyet),01:20:00,90,True
+Värjäykset,Väri (keskipitkät),01:30:00,99,True
+Värjäykset,Väri (pitkät),01:45:00,115,True
+Värjäykset,Väri (extrapitkät),02:00:00,129,True
+Värjäykset,Tyvivaalennus,01:00:00,75,True
+Värjäykset,Tyvivaalennus ja leikkaus,01:00:00,150,True
+Värjäykset,Sävytys,00:30:00,35,True
+Värjäykset,Vaalennus ja sävytys,01:00:00,100,True
+Värjäykset,Värinpoisto,00:30:00,30,True
+Värjäykset,Sävytys sis. pesu ja föönaus,01:00:00,70,True
+Värjäykset,Sävytys,01:00:00,80,True
+Hiustenpidennykset ja permanentit,Permanentti ja leikkaus (lyhyet),02:00:00,105,True
+Hiustenpidennykset ja permanentit,Permanentti ja leikkaus (keskipitkät),02:30:00,129,True
+Hiustenpidennykset ja permanentit,Permanentti ja leikkaus (pitkät),02:30:00,130,True
+Hiustenpidennykset ja permanentit,Permanentti ja leikkaus (extrapitkät),03:00:00,170,True
+Hiustenpidennykset ja permanentit,Permanentti lyhyet hiukset,01:00:00,95,True
+Hiustenpidennykset ja permanentit,Permanentti keskipitkät hiukset,01:10:00,130,True
+Hiustenpidennykset ja permanentit,Permanentti pitkät hiukset,01:30:00,150,True
+Hiustenpidennykset ja permanentit,Osapermanentti,01:00:00,85,True
+Hiustenpidennykset ja permanentit,Osapermanentti ja leikkaus,01:30:00,130,True
+Hiustenpidennykset ja permanentit,Afro- ja spiraalikiharat,01:00:00,70,True
+Hiustenpidennykset ja permanentit,Teippipidennysten poisto,01:00:00,50,True
+Ripset/kulmat,Ripset/kulmat    Ripsien värjäys,00:15:00,18,True
+Ripset/kulmat,Kulmien värjäys ja muotoilu,00:15:00,20,True
+Ripset/kulmat,Ripsien ja kulmien värjäys ja muotoilu,00:20:00,35,True
+Ripset/kulmat,Kulmien muotoilu,00:20:00,10,True
+Hiushoidot,Hiushoito,00:20:00,20,True

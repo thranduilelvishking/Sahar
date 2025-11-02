@@ -3,10 +3,9 @@ import pandas as pd
 from datetime import date
 from supabase import create_client, Client
 
-# ---------- PAGE CONFIG ----------
 st.set_page_config(page_title="Customer Detail", layout="wide")
 
-# ---------- CONNECT TO SUPABASE ----------
+# ---------- SUPABASE CONNECTION ----------
 @st.cache_resource
 def init_connection() -> Client:
     url = st.secrets["supabase"]["url"]
@@ -33,18 +32,11 @@ def get_products_list():
     return pd.DataFrame(res.data) if res.data else pd.DataFrame()
 
 def add_visit(customer_no, visit_date, service, total_price):
-    """Add visit; assign per-customer VisitID and compute VAT & net income."""
     vat = round(total_price * 0.255, 2)
     net_income = round(total_price - vat - 2, 2)
-
     existing = supabase.table("Visits").select("VisitID").eq("CustomerNo", customer_no).order("VisitID", desc=True).limit(1).execute()
-    next_visit_id = 1
-    if existing.data:
-        last = existing.data[0].get("VisitID")
-        if last:
-            next_visit_id = last + 1
-
-    response = supabase.table("Visits").insert({
+    next_visit_id = existing.data[0]["VisitID"] + 1 if existing.data else 1
+    res = supabase.table("Visits").insert({
         "CustomerNo": customer_no,
         "VisitID": next_visit_id,
         "Date": str(visit_date),
@@ -53,19 +45,15 @@ def add_visit(customer_no, visit_date, service, total_price):
         "VAT": vat,
         "NetIncome": net_income
     }).execute()
-
-    if response.data and len(response.data) > 0:
-        return response.data[0].get("VisitPK")
-    return None
+    return res.data[0]["VisitPK"] if res.data else None
 
 def add_product_used(visit_pk, product_name, weight_used):
-    """Add product usage and update visit NetIncome accordingly."""
     pinfo = supabase.table("Products").select("Brand, ColorNo, PricePerGram").eq("ProductName", product_name).execute()
     if pinfo.data:
         brand = pinfo.data[0]["Brand"]
         color = pinfo.data[0]["ColorNo"]
-        price_per_g = float(pinfo.data[0]["PricePerGram"])
-        cost = round(weight_used * price_per_g, 2)
+        price = float(pinfo.data[0]["PricePerGram"])
+        cost = round(weight_used * price, 2)
     else:
         brand, color, cost = None, None, 0.0
 
@@ -78,9 +66,8 @@ def add_product_used(visit_pk, product_name, weight_used):
         "ProductCost": cost
     }).execute()
 
-    # update NetIncome
     used = supabase.table("ProductsUsed").select("ProductCost").eq("VisitPK", visit_pk).execute()
-    total_cost = sum(float(p["ProductCost"]) for p in used.data) if used.data else 0
+    total_cost = sum(float(p["ProductCost"]) for p in used.data)
     visit = supabase.table("Visits").select("TotalPrice_Gross, VAT").eq("VisitPK", visit_pk).execute()
     if visit.data:
         gross = float(visit.data[0]["TotalPrice_Gross"])
@@ -91,8 +78,7 @@ def add_product_used(visit_pk, product_name, weight_used):
 # ---------- PAGE BODY ----------
 st.title("🌸 Customer Detail")
 
-# get parameter from URL
-customer_no = st.query_params.get("customer_no", [None])[0]
+customer_no = st.session_state.get("selected_customer_no")
 
 if not customer_no:
     st.warning("No customer selected. Please go back to the Customers page.")
@@ -105,14 +91,15 @@ if not customer:
 
 st.header(f"{customer['FullName']} (#{customer['CustomerNo']})")
 st.write(f"📞 {customer['Phone']} | ✉️ {customer['Email']}")
-st.markdown("[🔙 Back to Customers](/1_Customers)")
+if st.button("🔙 Back to Customers"):
+    st.switch_page("pages/1_Customers.py")
 
 st.divider()
 
 # ---------- VISITS ----------
 st.subheader("💈 Visits")
-visits_df = get_visits(customer_no)
-st.dataframe(visits_df, use_container_width=True)
+visits = get_visits(customer_no)
+st.dataframe(visits, use_container_width=True)
 
 with st.expander("➕ Add New Visit"):
     with st.form("add_visit_form"):
@@ -120,29 +107,27 @@ with st.expander("➕ Add New Visit"):
         service = st.text_input("Service")
         total_price = st.number_input("Total Price (€)", min_value=0.0, step=0.5)
         if st.form_submit_button("Add Visit"):
-            new_visit_pk = add_visit(customer_no, visit_date, service, total_price)
-            if new_visit_pk:
-                st.success(f"✅ Visit added successfully (VisitPK {new_visit_pk})")
+            new_pk = add_visit(customer_no, visit_date, service, total_price)
+            if new_pk:
+                st.success("✅ Visit added!")
                 st.rerun()
-            else:
-                st.error("⚠️ Visit could not be added — please verify Supabase.")
 
 st.divider()
 
 # ---------- PRODUCTS USED ----------
 st.subheader("🧴 Products Used")
 
-if not visits_df.empty:
-    visit_options = {f"{v['Date']} – {v['Service']} (ID {v['VisitID']})": v["VisitPK"] for _, v in visits_df.iterrows()}
+if not visits.empty:
+    visit_options = {f"{v['Date']} – {v['Service']} (ID {v['VisitID']})": v["VisitPK"] for _, v in visits.iterrows()}
     selected_visit_label = st.selectbox("Select Visit", list(visit_options.keys()))
     selected_visit_pk = visit_options[selected_visit_label]
 
-    products_used_df = get_products_used(selected_visit_pk)
-    st.dataframe(products_used_df, use_container_width=True)
+    products_used = get_products_used(selected_visit_pk)
+    st.dataframe(products_used, use_container_width=True)
 
     with st.expander("➕ Add Product Used"):
         products_df = get_products_list()
-        search_term = st.text_input("Search products (name, brand, or color)")
+        search_term = st.text_input("Search product")
         if search_term:
             products_df = products_df[
                 products_df.apply(
@@ -153,7 +138,7 @@ if not visits_df.empty:
                 )
             ]
         if products_df.empty:
-            st.warning("No matching products.")
+            st.warning("No products found.")
         else:
             product_names = products_df["ProductName"].tolist()
             with st.form("add_product_form"):
@@ -162,12 +147,12 @@ if not visits_df.empty:
                 st.markdown(
                     f"**Brand:** {pinfo['Brand']}  \n"
                     f"**ColorNo:** {pinfo['ColorNo']}  \n"
-                    f"**Price per g:** {pinfo['PricePerGram']} €"
+                    f"**Price/g:** {pinfo['PricePerGram']} €"
                 )
                 weight_used = st.number_input("Weight Used (g)", min_value=0.0, step=0.5)
                 if st.form_submit_button("Add Product"):
                     add_product_used(selected_visit_pk, selected_product, weight_used)
-                    st.success(f"✅ Added {selected_product} to Visit {selected_visit_pk}")
+                    st.success(f"✅ Added {selected_product}")
                     st.rerun()
 else:
-    st.info("No visits yet. Add one above first.")
+    st.info("No visits yet.")

@@ -57,8 +57,7 @@ def add_product(name, brand, buy_ex, qty):
         "SellPriceEx": sell_ex,
         "SellPriceInc": sell_inc,
         "ProfitAbs": profit_abs,
-        "Quantity": qty,
-        "VATRate": VAT_DEFAULT
+        "Quantity": qty
     }).execute()
 
 def add_to_cart(row, qty, discount):

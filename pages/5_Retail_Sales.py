@@ -5,8 +5,8 @@ from supabase import create_client, Client
 
 st.set_page_config(page_title="🛍️ Retail Sales", layout="wide")
 
-VAT_DEFAULT = 0.255  # 25.5% VAT
-PROFIT_MARGIN = 0.5  # 50% profit
+VAT_DEFAULT = 0.255   # 25.5% VAT (constant, not stored in SaleProducts)
+PROFIT_MARGIN = 0.5   # 50% profit on buy price (excl. VAT)
 
 # ---------- Supabase ----------
 @st.cache_resource
@@ -23,92 +23,134 @@ if "retail_session_id" not in st.session_state:
 SESSION_ID = st.session_state["retail_session_id"]
 
 # ---------- Database helpers ----------
-def load_products(search=""):
+def load_products(search: str = "") -> pd.DataFrame:
     q = supabase.table("SaleProducts").select("*")
     if search:
+        # Search by Name OR Brand
         q = q.or_(f"Name.ilike.%{search}%,Brand.ilike.%{search}%")
     res = q.execute()
     return pd.DataFrame(res.data) if res.data else pd.DataFrame()
 
-def save_product_row(row):
-    supabase.table("SaleProducts").update({
-        "Name": row["Name"],
-        "Brand": row["Brand"],
-        "BuyPriceEx": float(row["BuyPriceEx"]),
-        "BuyPriceInc": float(row["BuyPriceInc"]),
-        "SellPriceEx": float(row["SellPriceEx"]),
-        "SellPriceInc": float(row["SellPriceInc"]),
-        "ProfitAbs": float(row["ProfitAbs"]),
-        "Quantity": float(row["Quantity"]),
-        "VATRate": float(row["VATRate"])
-    }).eq("id", row["id"]).execute()
+def save_product_row(row: pd.Series) -> None:
+    # Persist only the columns that exist in SaleProducts
+    payload = {
+        "Name": str(row["Name"]).strip(),
+        "Brand": str(row["Brand"]).strip() if pd.notna(row.get("Brand")) else None,
+        "BuyPriceEx": float(row.get("BuyPriceEx", 0) or 0),
+        "BuyPriceInc": float(row.get("BuyPriceInc", 0) or 0),
+        "SellPriceEx": float(row.get("SellPriceEx", 0) or 0),
+        "SellPriceInc": float(row.get("SellPriceInc", 0) or 0),
+        "ProfitAbs": float(row.get("ProfitAbs", 0) or 0),
+        "Quantity": float(row.get("Quantity", 0) or 0),
+    }
+    try:
+        supabase.table("SaleProducts").update(payload).eq("id", row["id"]).execute()
+    except Exception as e:
+        st.exception(e)
 
-def add_product(name, brand, buy_ex, qty):
+def add_product(name: str, brand: str, buy_ex: float, qty: float) -> None:
+    buy_ex = float(buy_ex)
+    qty = float(qty)
+
+    # Auto-calculations based on constants
     buy_inc = round(buy_ex * (1 + VAT_DEFAULT), 2)
     sell_ex = round(buy_ex * (1 + PROFIT_MARGIN), 2)
     sell_inc = round(sell_ex * (1 + VAT_DEFAULT), 2)
     profit_abs = round(buy_ex * PROFIT_MARGIN, 2)
 
-    supabase.table("SaleProducts").insert({
-        "Name": name,
-        "Brand": brand,
+    payload = {
+        "Name": str(name).strip(),
+        "Brand": str(brand).strip() if brand else None,
         "BuyPriceEx": buy_ex,
         "BuyPriceInc": buy_inc,
         "SellPriceEx": sell_ex,
         "SellPriceInc": sell_inc,
         "ProfitAbs": profit_abs,
-        "Quantity": qty
-    }).execute()
+        "Quantity": qty,
+    }
 
-def add_to_cart(row, qty, discount):
+    try:
+        supabase.table("SaleProducts").insert(payload).execute()
+    except Exception as e:
+        st.exception(e)
+        raise
+
+def add_to_cart(row: pd.Series, qty: float, discount: float):
+    qty = float(qty)
+    discount = float(discount or 0)
+
     if qty <= 0:
         return "Quantity must be > 0"
     if qty > float(row["Quantity"]):
         return f"Not enough stock for {row['Name']}"
 
-    unit_ex = row["SellPriceEx"] * (1 - discount / 100)
-    unit_inc = unit_ex * (1 + row["VATRate"])
+    # Use constant VAT, not a column
+    unit_ex = float(row["SellPriceEx"]) * (1 - discount / 100.0)
+    unit_inc = unit_ex * (1 + VAT_DEFAULT)
     line_ex = qty * unit_ex
     line_inc = qty * unit_inc
 
-    supabase.table("SaleCart").insert({
+    payload = {
         "SessionID": SESSION_ID,
-        "ProductID": row["id"],
+        "ProductID": int(row["id"]),
         "Name": row["Name"],
-        "Brand": row["Brand"],
+        "Brand": row.get("Brand"),
         "Qty": qty,
         "DiscountPct": discount,
-        "VATRate": row["VATRate"],
+        "VATRate": VAT_DEFAULT,          # keep this if SaleCart has a VATRate column
         "UnitSellEx": unit_ex,
         "UnitSellInc": unit_inc,
         "LineTotalEx": line_ex,
-        "LineTotalInc": line_inc
-    }).execute()
+        "LineTotalInc": line_inc,
+    }
+
+    try:
+        supabase.table("SaleCart").insert(payload).execute()
+    except Exception as e:
+        st.exception(e)
+        return "Failed to add to cart"
     return None
 
-def get_cart():
+def get_cart() -> pd.DataFrame:
     res = supabase.table("SaleCart").select("*").eq("SessionID", SESSION_ID).execute()
     return pd.DataFrame(res.data) if res.data else pd.DataFrame()
 
 def clear_cart():
-    supabase.table("SaleCart").delete().eq("SessionID", SESSION_ID).execute()
+    try:
+        supabase.table("SaleCart").delete().eq("SessionID", SESSION_ID).execute()
+    except Exception as e:
+        st.exception(e)
 
-def confirm_sell(password):
+def confirm_sell(password: str):
     if password != st.secrets.get("app_password"):
         return "Incorrect password"
+
     cart = get_cart()
     if cart.empty:
         return "Cart is empty"
 
+    # Deduct stock atomically-ish (simple loop; consider RPC for production)
     for _, c in cart.iterrows():
         pid = int(c["ProductID"])
         qty = float(c["Qty"])
-        prod = supabase.table("SaleProducts").select("Quantity").eq("id", pid).execute().data[0]
+
+        try:
+            prod_res = supabase.table("SaleProducts").select("Quantity").eq("id", pid).execute()
+            prod = prod_res.data[0]
+        except Exception as e:
+            st.exception(e)
+            return f"Failed to load product {pid}"
+
         stock = float(prod["Quantity"])
         if stock < qty:
             return f"Not enough stock for {c['Name']}"
+
         new_stock = round(stock - qty, 2)
-        supabase.table("SaleProducts").update({"Quantity": new_stock}).eq("id", pid).execute()
+        try:
+            supabase.table("SaleProducts").update({"Quantity": new_stock}).eq("id", pid).execute()
+        except Exception as e:
+            st.exception(e)
+            return f"Failed to update stock for {c['Name']}"
 
     clear_cart()
     return None
@@ -127,12 +169,15 @@ with st.form("add_product"):
     submit = st.form_submit_button("Add Product")
 
     if submit:
-        if not name.strip():
+        if not str(name).strip():
             st.error("Name required.")
         else:
-            add_product(name, brand, buy_ex, qty)
-            st.success("✅ Product added successfully!")
-            st.rerun()
+            try:
+                add_product(name, brand, buy_ex, qty)
+                st.success("✅ Product added successfully!")
+                st.rerun()
+            except Exception:
+                st.error("❌ Failed to add product. See the error details above.")
 
 st.divider()
 
@@ -145,18 +190,21 @@ df = load_products(search)
 if df.empty:
     st.info("No products yet.")
 else:
+    # Recompute derived fields in non-edit mode from BuyPriceEx using constants
     if not edit_mode:
-        df["BuyPriceInc"] = (df["BuyPriceEx"] * (1 + df["VATRate"])).round(2)
+        df["BuyPriceInc"] = (df["BuyPriceEx"] * (1 + VAT_DEFAULT)).round(2)
         df["SellPriceEx"] = (df["BuyPriceEx"] * (1 + PROFIT_MARGIN)).round(2)
-        df["SellPriceInc"] = (df["SellPriceEx"] * (1 + df["VATRate"])).round(2)
+        df["SellPriceInc"] = (df["SellPriceEx"] * (1 + VAT_DEFAULT)).round(2)
         df["ProfitAbs"] = (df["BuyPriceEx"] * PROFIT_MARGIN).round(2)
 
     cols = ["Name", "Brand", "SellPriceEx", "SellPriceInc", "Quantity"]
     if show_sensitive:
         cols += ["BuyPriceEx", "BuyPriceInc", "ProfitAbs"]
 
+    # Guard: ensure cols exist
+    existing_cols = [c for c in cols if c in df.columns]
     edited = st.data_editor(
-        df[cols],
+        df[existing_cols],
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
@@ -167,19 +215,22 @@ else:
         pw = st.text_input("🔐 Enter admin password", type="password", key="pw_edit")
         if pw == st.secrets.get("app_password"):
             for _, row in edited.iterrows():
+                # Map back to original row to get id
+                # (Assumes Name is unique; if not, replace with id in the editor)
                 rid = df.loc[df["Name"] == row["Name"]].iloc[0]["id"]
-                save_product_row(pd.Series({
+                payload_series = pd.Series({
                     "id": rid,
-                    "Name": row["Name"],
-                    "Brand": row["Brand"],
-                    "BuyPriceEx": row.get("BuyPriceEx", 0),
-                    "BuyPriceInc": row.get("BuyPriceInc", 0),
-                    "SellPriceEx": row.get("SellPriceEx", 0),
-                    "SellPriceInc": row.get("SellPriceInc", 0),
-                    "ProfitAbs": row.get("ProfitAbs", 0),
-                    "Quantity": row["Quantity"],
-                    "VATRate": VAT_DEFAULT
-                }))
+                    "Name": row.get("Name"),
+                    "Brand": row.get("Brand"),
+                    "BuyPriceEx": row.get("BuyPriceEx", df.loc[df["id"] == rid, "BuyPriceEx"].iloc[0] if "BuyPriceEx" in df else 0),
+                    "BuyPriceInc": row.get("BuyPriceInc", df.loc[df["id"] == rid, "BuyPriceInc"].iloc[0] if "BuyPriceInc" in df else 0),
+                    "SellPriceEx": row.get("SellPriceEx", df.loc[df["id"] == rid, "SellPriceEx"].iloc[0] if "SellPriceEx" in df else 0),
+                    "SellPriceInc": row.get("SellPriceInc", df.loc[df["id"] == rid, "SellPriceInc"].iloc[0] if "SellPriceInc" in df else 0),
+                    "ProfitAbs": row.get("ProfitAbs", df.loc[df["id"] == rid, "ProfitAbs"].iloc[0] if "ProfitAbs" in df else 0),
+                    "Quantity": row.get("Quantity", df.loc[df["id"] == rid, "Quantity"].iloc[0] if "Quantity" in df else 0),
+                })
+                save_product_row(payload_series)
+
             st.success("✅ Changes saved.")
             st.rerun()
         else:
@@ -193,11 +244,13 @@ cart = get_cart()
 if cart.empty:
     st.info("Cart empty.")
 else:
+    # Recompute totals for display (in case DB didn’t calculate)
     cart["LineTotalEx"] = cart["Qty"] * cart["UnitSellEx"]
     cart["LineTotalInc"] = cart["Qty"] * cart["UnitSellInc"]
-    st.dataframe(cart[["Name", "Brand", "Qty", "DiscountPct", "LineTotalEx", "LineTotalInc"]])
-    total_ex = cart["LineTotalEx"].sum()
-    total_inc = cart["LineTotalInc"].sum()
+    st.dataframe(cart[["Name", "Brand", "Qty", "DiscountPct", "LineTotalEx", "LineTotalInc"]], use_container_width=True)
+
+    total_ex = float(cart["LineTotalEx"].sum())
+    total_inc = float(cart["LineTotalInc"].sum())
     st.markdown(f"**Total excl. VAT: €{total_ex:.2f}** | **Total incl. VAT: €{total_inc:.2f}**")
 
     pw = st.text_input("🔐 Password to confirm sale", type="password", key="pw_cart")

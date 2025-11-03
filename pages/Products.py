@@ -16,10 +16,13 @@ supabase = get_client()
 # --- Load Products ---
 def load_products(search_query=""):
     query = supabase.table("Products").select("*")
-    if search_query:
-        query = query.ilike("ProductName", f"%{search_query}%") \
-                     .or_().ilike("Brand", f"%{search_query}%") \
-                     .or_().ilike("ColorNo", f"%{search_query}%")
+    if search_query.strip():
+        # Combine OR conditions into one string (correct syntax)
+        query = query.or_(
+            f"ProductName.ilike.%{search_query}%,"
+            f"Brand.ilike.%{search_query}%,"
+            f"ColorNo.ilike.%{search_query}%"
+        )
     res = query.execute()
     return pd.DataFrame(res.data) if res.data else pd.DataFrame()
 
@@ -44,7 +47,12 @@ if products.empty:
     st.warning("No products found.")
 else:
     st.write(f"Found {len(products)} products.")
-    edited_df = st.data_editor(products, use_container_width=True, hide_index=True, key="editable_products")
+    edited_df = st.data_editor(
+        products,
+        use_container_width=True,
+        hide_index=True,
+        key="editable_products"
+    )
 
     if st.button("💾 Save Changes"):
         pw = st.text_input("🔐 Enter admin password to confirm changes", type="password")

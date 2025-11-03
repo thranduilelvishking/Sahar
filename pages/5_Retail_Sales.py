@@ -58,6 +58,9 @@ def save_product_row(row):
     safe_execute(lambda: supabase.table("SaleProducts").update(data).eq("id", row["id"]).execute())
 
 def add_product(name, brand, buy_ex, qty):
+    buy_ex = float(buy_ex)
+    qty = float(qty)
+
     buy_inc = round(buy_ex * (1 + VAT_DEFAULT), 2)
     sell_ex = round(buy_ex * (1 + PROFIT_MARGIN), 2)
     sell_inc = round(sell_ex * (1 + VAT_DEFAULT), 2)
@@ -76,11 +79,13 @@ def add_product(name, brand, buy_ex, qty):
     safe_execute(lambda: supabase.table("SaleProducts").insert(data).execute())
 
 def add_to_cart(row, qty):
+    qty = float(qty)
     if qty <= 0:
         return "Quantity must be > 0"
     if qty > float(row["Quantity"]):
         return f"Not enough stock for {row['Name']}"
 
+    # already in cart? -> update qty
     existing = safe_execute(
         lambda: supabase.table("SaleCart")
         .select("id,Qty")
@@ -96,6 +101,7 @@ def add_to_cart(row, qty):
             lambda: supabase.table("SaleCart")
             .update({
                 "Qty": new_qty,
+                "VATRate": VAT_DEFAULT,
                 "LineTotalEx": row["SellPriceEx"] * new_qty,
                 "LineTotalInc": row["SellPriceInc"] * new_qty,
             })
@@ -110,12 +116,15 @@ def add_to_cart(row, qty):
                 "Name": row["Name"],
                 "Brand": row["Brand"],
                 "Qty": qty,
+                "DiscountPct": 0.0,            # default; adjust later if you add UI
+                "VATRate": VAT_DEFAULT,        # <- important: NOT NULL column in SaleCart
                 "UnitSellEx": row["SellPriceEx"],
                 "UnitSellInc": row["SellPriceInc"],
                 "LineTotalEx": row["SellPriceEx"] * qty,
                 "LineTotalInc": row["SellPriceInc"] * qty,
             }).execute()
         )
+    return None
 
 def get_cart():
     res = safe_execute(lambda: supabase.table("SaleCart").select("*").eq("SessionID", SESSION_ID).execute())
@@ -123,18 +132,35 @@ def get_cart():
 
 def update_cart_quantity(cid, new_qty):
     try:
-        item = safe_execute(lambda: supabase.table("SaleCart").select("UnitSellEx,UnitSellInc").eq("id", cid).execute())
+        # get current cart row including ProductID for stock check
+        item = safe_execute(lambda: supabase.table("SaleCart")
+                            .select("ProductID,UnitSellEx,UnitSellInc,Qty")
+                            .eq("id", cid).execute())
         if not item.data:
             return
-        new_qty = max(float(new_qty), 0)
-        ex = item.data[0]["UnitSellEx"]
-        inc = item.data[0]["UnitSellInc"]
+        product_id = int(item.data[0]["ProductID"])
+        unit_ex = float(item.data[0]["UnitSellEx"])
+        unit_inc = float(item.data[0]["UnitSellInc"])
+
+        # stock check
+        prod = safe_execute(lambda: supabase.table("SaleProducts")
+                            .select("Quantity").eq("id", product_id).execute()).data[0]
+        stock = float(prod["Quantity"])
+
+        new_qty = float(new_qty)
+        if new_qty < 0:
+            new_qty = 0.0
+        if new_qty > stock:
+            st.warning("⚠️ Cannot exceed available stock.")
+            new_qty = stock
+
         safe_execute(
             lambda: supabase.table("SaleCart")
             .update({
                 "Qty": new_qty,
-                "LineTotalEx": ex * new_qty,
-                "LineTotalInc": inc * new_qty,
+                "VATRate": VAT_DEFAULT,
+                "LineTotalEx": unit_ex * new_qty,
+                "LineTotalInc": unit_inc * new_qty,
             })
             .eq("id", cid)
             .execute()
@@ -195,7 +221,7 @@ df = load_products(search)
 if df.empty:
     st.info("No products yet.")
 else:
-    # calculate derived values
+    # compute derived values (not stored in DB)
     df["BuyPriceInc"] = (df["BuyPriceEx"] * (1 + VAT_DEFAULT)).round(2)
     df["SellPriceEx"] = (df["BuyPriceEx"] * (1 + PROFIT_MARGIN)).round(2)
     df["SellPriceInc"] = (df["SellPriceEx"] * (1 + VAT_DEFAULT)).round(2)
@@ -208,7 +234,7 @@ else:
     if edit_mode:
         edited = st.data_editor(df[cols], use_container_width=True, hide_index=True)
         if st.button("💾 Save Edits"):
-            for i, row in edited.iterrows():
+            for _, row in edited.iterrows():
                 rid = df.loc[df["Name"] == row["Name"], "id"].iloc[0]
                 save_product_row(pd.Series({"id": rid, **row.to_dict()}))
             st.success("✅ Saved changes.")
@@ -216,19 +242,36 @@ else:
     else:
         st.subheader("📦 Inventory")
         for idx, row in df.iterrows():
-            c1, c2, c3, c4, c5, c6 = st.columns([3, 2, 2, 2, 2, 1])
-            c1.markdown(f"**{row['Name']}**  \n{row['Brand']}")
+            # layout: Name/Brand | SellEx | SellInc | Stock | Qty input | Add btn
+            c1, c2, c3, c4, c5, c6 = st.columns([4, 2, 2, 2, 2, 1])
+            # always visible
+            c1.markdown(f"**{row['Name']}**  \n{row.get('Brand') or ''}")
             c2.markdown(f"€{row['SellPriceEx']:.2f} excl. VAT")
             c3.markdown(f"€{row['SellPriceInc']:.2f} incl. VAT")
             c4.markdown(f"Stock: {row['Quantity']}")
-            qty_input = c5.number_input(f"Qty_{idx}", min_value=0.0, max_value=float(row["Quantity"]), step=1.0, label_visibility="collapsed")
+            qty_input = c5.number_input(
+                f"Qty_{idx}",
+                min_value=1.0,
+                max_value=float(max(row["Quantity"], 1.0)),
+                step=1.0,
+                value=1.0,
+                label_visibility="collapsed",
+            )
             if c6.button("🛒", key=f"addcart_{idx}"):
                 msg = add_to_cart(row, qty_input)
                 if msg:
                     st.error(msg)
                 else:
-                    st.success(f"Added {qty_input} × {row['Name']}")
+                    st.success(f"Added {qty_input:.0f} × {row['Name']}")
                     st.rerun()
+
+            # show/hide sensitive fields (rendered under the row)
+            if show_sensitive:
+                c1.caption(
+                    f"Buy ex: €{row['BuyPriceEx']:.2f} | "
+                    f"Buy inc: €{row['BuyPriceInc']:.2f} | "
+                    f"Profit: €{row['ProfitAbs']:.2f}"
+                )
 
 st.divider()
 
@@ -238,41 +281,50 @@ cart = get_cart()
 if cart.empty:
     st.info("Cart empty.")
 else:
-    total_ex = cart["LineTotalEx"].sum()
-    total_inc = cart["LineTotalInc"].sum()
-    vat_total = round(total_inc - total_ex, 2)
-
+    # display cart rows with +/- controls
     for idx, c in cart.iterrows():
-        c1, c2, c3, c4, c5, c6, c7 = st.columns([3, 2, 2, 2, 2, 1, 1])
-        c1.markdown(f"**{c['Name']}**  \n{c['Brand']}")
-        c2.markdown(f"€{c['UnitSellEx']:.2f}")
-        c3.markdown(f"€{c['UnitSellInc']:.2f}")
-        c4.markdown(f"€{c['LineTotalEx']:.2f}")
-        c5.markdown(f"€{c['LineTotalInc']:.2f}")
+        c1, c2, c3, c4, c5, c6, c7, c8 = st.columns([4, 2, 2, 2, 2, 1, 1, 2])
+        c1.markdown(f"**{c['Name']}**  \n{c.get('Brand') or ''}")
+        c2.markdown(f"€{c['UnitSellEx']:.2f} (ex)")
+        c3.markdown(f"€{c['UnitSellInc']:.2f} (inc)")
+        c4.markdown(f"€{c['LineTotalEx']:.2f} (ex)")
+        c5.markdown(f"€{c['LineTotalInc']:.2f} (inc)")
         dec = c6.button("➖", key=f"dec_{idx}")
         inc = c7.button("➕", key=f"inc_{idx}")
-        if dec and c["Qty"] > 1:
+        c8.caption(f"Qty: {c['Qty']:.0f}")
+        if dec and c["Qty"] > 0:
             update_cart_quantity(c["id"], c["Qty"] - 1)
             st.rerun()
-        elif inc:
+        if inc:
             update_cart_quantity(c["id"], c["Qty"] + 1)
             st.rerun()
-        c1.caption(f"Qty: {c['Qty']}")
 
-    st.markdown("---")
-    st.markdown("### 🧮 Totals")
-    t1, t2, t3, t4 = st.columns(4)
-    t1.metric("Items", len(cart))
-    t2.metric("Subtotal (excl. VAT)", f"€{total_ex:.2f}")
-    t3.metric("VAT (25.5%)", f"€{vat_total:.2f}")
-    t4.metric("Total (incl. VAT)", f"€{total_inc:.2f}")
+    # totals
+    cart = get_cart()  # refresh after any changes
+    if not cart.empty:
+        total_ex = float(cart["LineTotalEx"].sum())
+        total_inc = float(cart["LineTotalInc"].sum())
+        vat_total = round(total_inc - total_ex, 2)
 
-    st.markdown("---")
-    pw = st.text_input("🔐 Password to confirm sale", type="password", key="pw_cart")
-    if st.button("✅ Confirm Sale"):
-        msg = confirm_sell(pw)
-        if msg:
-            st.error(msg)
-        else:
-            st.success("✅ Sale confirmed and inventory updated.")
+        st.markdown("---")
+        st.markdown("### 🧮 Totals")
+        t1, t2, t3, t4 = st.columns(4)
+        t1.metric("Items", int(cart["Qty"].sum()))
+        t2.metric("Subtotal (excl. VAT)", f"€{total_ex:.2f}")
+        t3.metric("VAT (25.5%)", f"€{vat_total:.2f}")
+        t4.metric("Total (incl. VAT)", f"€{total_inc:.2f}")
+
+        st.markdown("---")
+        pw = st.text_input("🔐 Password to confirm sale", type="password", key="pw_cart")
+        col_ok, col_clear = st.columns([1,1])
+        if col_ok.button("✅ Confirm Sale"):
+            msg = confirm_sell(pw)
+            if msg:
+                st.error(msg)
+            else:
+                st.success("✅ Sale confirmed and inventory updated.")
+                st.rerun()
+        if col_clear.button("🗑️ Clear Cart"):
+            clear_cart()
+            st.success("Cart cleared.")
             st.rerun()

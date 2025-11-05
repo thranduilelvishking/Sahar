@@ -32,7 +32,7 @@ def get_products_list():
     return pd.DataFrame(res.data) if res.data else pd.DataFrame()
 
 def add_visit(customer_no, visit_date, service, total_price):
-    vat = round(total_price/1.255, 2)
+    vat = round(total_price-(total_price/1.255), 2)
     net_income = round(total_price - vat - 2, 2)
     existing = supabase.table("Visits").select("VisitID").eq("CustomerNo", customer_no).order("VisitID", desc=True).limit(1).execute()
     next_visit_id = existing.data[0]["VisitID"] + 1 if existing.data else 1
@@ -156,4 +156,5 @@ if not visits.empty:
                     st.rerun()
 else:
     st.info("No visits yet.")
+
 

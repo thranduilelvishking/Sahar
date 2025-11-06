@@ -19,21 +19,28 @@ def get_customer(customer_no):
     res = supabase.table("Customers").select("*").eq("CustomerNo", customer_no).execute()
     return res.data[0] if res.data else None
 
-def update_customer(customer_no, name, phone, email, notes):
+def update_customer(customer_no, name, phone, email):
     supabase.table("Customers").update({
         "FullName": name,
         "Phone": phone,
-        "Email": email,
-        "Notes": notes
+        "Email": email
     }).eq("CustomerNo", customer_no).execute()
 
 def get_visits(customer_no):
     res = supabase.table("Visits").select("*").eq("CustomerNo", customer_no).order("Date", desc=True).execute()
-    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    df = pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    if not df.empty:
+        df = df.drop(columns=["VisitPK"], errors="ignore")
+        df.index = range(1, len(df) + 1)
+    return df
 
 def get_products_used(visit_pk):
     res = supabase.table("ProductsUsed").select("*").eq("VisitPK", visit_pk).execute()
-    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    df = pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    if not df.empty:
+        df = df.drop(columns=["ProductPK", "VisitPK"], errors="ignore")
+        df.index = range(1, len(df) + 1)
+    return df
 
 def get_products_list():
     res = supabase.table("Products").select("ProductName, Brand, ColorNo, PricePerGram").order("Brand").execute()
@@ -77,6 +84,7 @@ def add_product_used(visit_pk, product_name, weight_used):
     used = supabase.table("ProductsUsed").select("ProductCost").eq("VisitPK", visit_pk).execute()
     total_cost = sum(float(p["ProductCost"]) for p in used.data)
     visit = supabase.table("Visits").select("TotalPrice_Gross, VAT").eq("VisitPK", visit_pk).execute()
+
     if visit.data:
         gross = float(visit.data[0]["TotalPrice_Gross"])
         vat = float(visit.data[0]["VAT"])
@@ -87,6 +95,7 @@ def add_product_used(visit_pk, product_name, weight_used):
 st.title("🌸 Customer Detail")
 
 customer_no = st.session_state.get("selected_customer_no")
+
 if not customer_no:
     st.warning("No customer selected. Please go back to the Customers page.")
     st.stop()
@@ -96,35 +105,32 @@ if not customer:
     st.error(f"No customer found with number {customer_no}.")
     st.stop()
 
+# ---------- EDIT CUSTOMER ----------
 st.header(f"{customer['FullName']} (#{customer['CustomerNo']})")
 
-# ---------- CONTACT INFO & EDIT ----------
 with st.expander("✏️ Edit Customer Info"):
     with st.form("edit_customer_form"):
-        new_name = st.text_input("Full Name", customer["FullName"])
-        new_phone = st.text_input("Phone", customer["Phone"])
-        new_email = st.text_input("Email", customer["Email"])
-        new_notes = st.text_area("Notes", customer.get("Notes", ""))
+        name = st.text_input("Full Name", customer["FullName"])
+        phone = st.text_input("Phone", customer["Phone"])
+        email = st.text_input("Email", customer["Email"])
         if st.form_submit_button("Save Changes"):
-            update_customer(customer_no, new_name, new_phone, new_email, new_notes)
-            st.success("✅ Customer Updated")
+            update_customer(customer_no, name, phone, email)
+            st.success("✅ Customer updated!")
             st.rerun()
-
-st.write(f"📞 {customer['Phone']} | ✉️ {customer['Email']}")
 
 if st.button("🔙 Back to Customers"):
     st.switch_page("pages/1_Customers.py")
 
 st.divider()
 
-# ---------- PRICE VISIBILITY TOGGLE ----------
-show_prices = st.checkbox("💶 Show Price Details", value=True)
+# ---------- PRICE TOGGLE ----------
+show_price = st.toggle("Show Price Details", value=False)
 
 # ---------- VISITS ----------
 st.subheader("💈 Visits")
 visits = get_visits(customer_no)
 
-if not show_prices:
+if not show_price and not visits.empty:
     visits = visits.drop(columns=["TotalPrice_Gross", "VAT", "NetIncome"], errors="ignore")
 
 st.dataframe(visits, use_container_width=True)
@@ -144,15 +150,17 @@ st.divider()
 
 # ---------- PRODUCTS USED ----------
 st.subheader("🧴 Products Used")
+all_visits = supabase.table("Visits").select("*").eq("CustomerNo", customer_no).order("Date", desc=True).execute()
+visits_df = pd.DataFrame(all_visits.data) if all_visits.data else pd.DataFrame()
 
-if not visits.empty:
-    visit_options = {f"{v['Date']} – {v['Service']} (ID {v['VisitID']})": v["VisitPK"] for _, v in visits.iterrows()}
+if not visits_df.empty:
+    visit_options = {f"{v['Date']} – {v['Service']} (ID {v['VisitID']})": v["VisitPK"] for _, v in visits_df.iterrows()}
     selected_visit_label = st.selectbox("Select Visit", list(visit_options.keys()))
     selected_visit_pk = visit_options[selected_visit_label]
 
     products_used = get_products_used(selected_visit_pk)
 
-    if not show_prices:
+    if not show_price:
         products_used = products_used.drop(columns=["ProductCost"], errors="ignore")
 
     st.dataframe(products_used, use_container_width=True)
@@ -166,7 +174,7 @@ if not visits.empty:
                     lambda x: search_term.lower() in str(x["ProductName"]).lower()
                     or search_term.lower() in str(x["Brand"]).lower()
                     or search_term.lower() in str(x["ColorNo"]).lower(),
-                    axis=1
+                    axis=1,
                 )
             ]
         if products_df.empty:

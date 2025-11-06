@@ -38,7 +38,7 @@ def get_products_used(visit_pk):
     res = supabase.table("ProductsUsed").select("*").eq("VisitPK", visit_pk).execute()
     df = pd.DataFrame(res.data) if res.data else pd.DataFrame()
     if not df.empty:
-        df = df.drop(columns=["ProductPK", "VisitPK"], errors="ignore")
+        df = df.drop(columns=["ProductPK", "VisitPK","ProductUsedPK"], errors="ignore")
         df.index = range(1, len(df) + 1)
     return df
 
@@ -196,3 +196,4 @@ if not visits_df.empty:
                     st.rerun()
 else:
     st.info("No visits yet.")
+

@@ -19,6 +19,14 @@ def get_customer(customer_no):
     res = supabase.table("Customers").select("*").eq("CustomerNo", customer_no).execute()
     return res.data[0] if res.data else None
 
+def update_customer(customer_no, name, phone, email, notes):
+    supabase.table("Customers").update({
+        "FullName": name,
+        "Phone": phone,
+        "Email": email,
+        "Notes": notes
+    }).eq("CustomerNo", customer_no).execute()
+
 def get_visits(customer_no):
     res = supabase.table("Visits").select("*").eq("CustomerNo", customer_no).order("Date", desc=True).execute()
     return pd.DataFrame(res.data) if res.data else pd.DataFrame()
@@ -79,7 +87,6 @@ def add_product_used(visit_pk, product_name, weight_used):
 st.title("🌸 Customer Detail")
 
 customer_no = st.session_state.get("selected_customer_no")
-
 if not customer_no:
     st.warning("No customer selected. Please go back to the Customers page.")
     st.stop()
@@ -90,15 +97,36 @@ if not customer:
     st.stop()
 
 st.header(f"{customer['FullName']} (#{customer['CustomerNo']})")
+
+# ---------- CONTACT INFO & EDIT ----------
+with st.expander("✏️ Edit Customer Info"):
+    with st.form("edit_customer_form"):
+        new_name = st.text_input("Full Name", customer["FullName"])
+        new_phone = st.text_input("Phone", customer["Phone"])
+        new_email = st.text_input("Email", customer["Email"])
+        new_notes = st.text_area("Notes", customer.get("Notes", ""))
+        if st.form_submit_button("Save Changes"):
+            update_customer(customer_no, new_name, new_phone, new_email, new_notes)
+            st.success("✅ Customer Updated")
+            st.rerun()
+
 st.write(f"📞 {customer['Phone']} | ✉️ {customer['Email']}")
+
 if st.button("🔙 Back to Customers"):
     st.switch_page("pages/1_Customers.py")
 
 st.divider()
 
+# ---------- PRICE VISIBILITY TOGGLE ----------
+show_prices = st.checkbox("💶 Show Price Details", value=True)
+
 # ---------- VISITS ----------
 st.subheader("💈 Visits")
 visits = get_visits(customer_no)
+
+if not show_prices:
+    visits = visits.drop(columns=["TotalPrice_Gross", "VAT", "NetIncome"], errors="ignore")
+
 st.dataframe(visits, use_container_width=True)
 
 with st.expander("➕ Add New Visit"):
@@ -123,6 +151,10 @@ if not visits.empty:
     selected_visit_pk = visit_options[selected_visit_label]
 
     products_used = get_products_used(selected_visit_pk)
+
+    if not show_prices:
+        products_used = products_used.drop(columns=["ProductCost"], errors="ignore")
+
     st.dataframe(products_used, use_container_width=True)
 
     with st.expander("➕ Add Product Used"):
@@ -134,7 +166,7 @@ if not visits.empty:
                     lambda x: search_term.lower() in str(x["ProductName"]).lower()
                     or search_term.lower() in str(x["Brand"]).lower()
                     or search_term.lower() in str(x["ColorNo"]).lower(),
-                    axis=1,
+                    axis=1
                 )
             ]
         if products_df.empty:
@@ -156,5 +188,3 @@ if not visits.empty:
                     st.rerun()
 else:
     st.info("No visits yet.")
-
-

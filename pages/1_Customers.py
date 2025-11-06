@@ -64,7 +64,8 @@ else:
     if search_term:
         customers = customers[
             customers.apply(
-                lambda x: search_term.lower() in str(x["FullName"]).lower()
+                lambda x: search_term.lower() in str(x["CustomerNo"]).lower()
+                or search_term.lower() in str(x["FullName"]).lower()
                 or search_term.lower() in str(x["Phone"]).lower()
                 or search_term.lower() in str(x["Email"]).lower(),
                 axis=1,
@@ -84,3 +85,4 @@ else:
                 if st.button("👁 View", key=f"view_{row['CustomerNo']}"):
                     st.session_state["selected_customer_no"] = row["CustomerNo"]
                     st.switch_page("pages/2_Customer_Detail.py")
+
